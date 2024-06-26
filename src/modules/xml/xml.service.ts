@@ -1,59 +1,68 @@
-import { Injectable } from "@nestjs/common";
-import { parseStringPromise } from "xml2js";
+import { Injectable, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Make } from "./entities/make.entity";
 import { Repository } from "typeorm";
-import axios from "axios";
+import { HttpService } from "@nestjs/axios";
+import { lastValueFrom } from "rxjs";
+import { parseStringPromise } from "xml2js";
+import { Make } from "./entities/make.entity";
+import { VehicleType } from "./entities/vehicle-type.entity";
 
 @Injectable()
-export class XmlService {
+export class XmlService implements OnModuleInit {
   constructor(
     @InjectRepository(Make)
-    private makesRepository: Repository<Make>
+    private makesRepository: Repository<Make>,
+    @InjectRepository(VehicleType)
+    private vehicleTypesRepository: Repository<VehicleType>,
+    private httpService: HttpService
   ) {}
 
-  async fetchAndParseXml(url: string): Promise<any> {
-    const response = await axios.get(url);
-    const parsedXml = await parseStringPromise(response.data);
-    return parsedXml;
-  }
-
-  async getAllMakes(): Promise<any[]> {
-    const url =
-      "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=XML";
-    const result = await this.fetchAndParseXml(url);
-    return result.Response.Results[0].AllVehicleMakes.map((make: any) => ({
-      makeId: make.Make_ID[0],
-      makeName: make.Make_Name[0],
-    }));
-  }
-
-  async getVehicleTypesForMakeId(makeId: number): Promise<any[]> {
-    const url = `https://vpic.nhtsa.dot.gov/api/vehicles/GetVehicleTypesForMakeId/${makeId}?format=XML`;
-    const result = await this.fetchAndParseXml(url);
-    return result.Response.Results[0].VehicleTypesForMakeIds.map(
-      (vehicleType: any) => ({
-        typeId: vehicleType.VehicleTypeId[0],
-        typeName: vehicleType.VehicleTypeName[0],
-      })
-    );
-  }
-
-  async getMakesWithVehicleTypes(): Promise<any[]> {
-    const makes = await this.getAllMakes();
-    const makesWithVehicleTypes = await Promise.all(
-      makes.map(async (make) => {
-        const vehicleTypes = await this.getVehicleTypesForMakeId(make.makeId);
-        return {
-          ...make,
-          vehicleTypes,
-        };
-      })
-    );
-    return makesWithVehicleTypes;
+  async onModuleInit() {
+    await this.populateDatabase();
   }
 
   async findAll(): Promise<Make[]> {
     return this.makesRepository.find({ relations: ["vehicleTypes"] });
+  }
+
+  private async populateDatabase(): Promise<void> {
+    try {
+      const makesData = await this.fetchXmlData(
+        "https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=XML"
+      );
+      console.log("Fetched makes data");
+      const makesJson = await parseStringPromise(makesData);
+      const makes =
+        makesJson.Response?.Results?.[0]?.AllVehicleMakes?.map((make: any) => ({
+          makeId: make.Make_ID[0],
+          makeName: make.Make_Name[0],
+        })) || [];
+
+      for (const make of makes) {
+        const savedMake = await this.makesRepository.save(make);
+        const vehicleTypesData = await this.fetchXmlData(
+          `https://vpic.nhtsa.dot.gov/api/vehicles/GetVehicleTypesForMakeId/${make.makeId}?format=XML`
+        );
+        console.log(`Fetched vehicle types for makeId ${make.makeId}`);
+        const vehicleTypesJson = await parseStringPromise(vehicleTypesData);
+        const vehicleTypes =
+          vehicleTypesJson.Response?.Results?.[0]?.VehicleTypesForMakeIds?.map(
+            (vehicleType: any) => ({
+              typeId: vehicleType.VehicleTypeId[0],
+              typeName: vehicleType.VehicleTypeName[0],
+              make: savedMake,
+            })
+          ) || [];
+
+        await this.vehicleTypesRepository.save(vehicleTypes);
+      }
+    } catch (error) {
+      console.error("Error populating database:", error);
+    }
+  }
+
+  private async fetchXmlData(url: string): Promise<string> {
+    const response = await lastValueFrom(this.httpService.get(url));
+    return response.data;
   }
 }
