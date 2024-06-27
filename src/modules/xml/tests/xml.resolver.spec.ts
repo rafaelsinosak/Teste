@@ -26,7 +26,7 @@ describe("XmlResolver", () => {
   });
 
   it("should return an array of makes", async () => {
-    const result = await resolver.getMakes(); // Alterar o nome do método para getMakes
+    const result = await resolver.getMakes();
     expect(result).toEqual([]);
   });
 });

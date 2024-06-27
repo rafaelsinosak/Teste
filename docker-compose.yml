@@ -1,5 +1,9 @@
 version: "3.8"
 
+networks:
+  app-tier:
+    driver: bridge
+
 services:
   db:
     image: mysql:5.7
@@ -8,9 +12,28 @@ services:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: test
     ports:
-      - "3307:3306"
+      - "3306:3306"
     volumes:
       - db-data:/var/lib/mysql
+    networks:
+      - app-tier
+
+  app:
+    depends_on:
+      - db
+    build: .
+    command: sh -c 'echo "Waiting for MySQL to be available..." && sleep 30 && npm run start:prod'
+    ports:
+      - "3000:3000"
+    networks:
+      - app-tier
+    environment:
+      DB_TYPE: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      DB_DATABASE: test
 
 volumes:
   db-data:

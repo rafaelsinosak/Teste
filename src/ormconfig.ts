@@ -11,8 +11,8 @@ console.log("Database Configuration:", {
 
 const config: TypeOrmModuleOptions = {
   type: process.env.DB_TYPE as "mysql" | "postgres",
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "3307", 10),
+  host: process.env.DB_HOST || "db",
+  port: parseInt(process.env.DB_PORT || "3306", 10),
   username: process.env.DB_USERNAME || "root",
   password: process.env.DB_PASSWORD || "root",
   database: process.env.DB_DATABASE || "test",
